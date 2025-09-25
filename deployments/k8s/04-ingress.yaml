@@ -1,0 +1,112 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: task-queue-ingress
+  namespace: task-queue-system
+  labels:
+    app.kubernetes.io/name: task-queue
+    app.kubernetes.io/component: ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    # Rate limiting
+    nginx.ingress.kubernetes.io/rate-limit-connections: "10"
+    nginx.ingress.kubernetes.io/rate-limit-rps: "5"
+    # SSL redirect (uncomment if using HTTPS)
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: task-queue.local # Change to your domain
+    http:
+      paths:
+      - path: /api/v1/health
+        pathType: Exact
+        backend:
+          service:
+            name: task-queue-service
+            port:
+              number: 80
+      - path: /api/v1/tasks
+        pathType: Prefix
+        backend:
+          service:
+            name: task-queue-service
+            port:
+              number: 80
+      - path: /api/v1/stats
+        pathType: Exact
+        backend:
+          service:
+            name: task-queue-service
+            port:
+              number: 80
+      - path: /api/v1/workers
+        pathType: Exact
+        backend:
+          service:
+            name: task-queue-service
+            port:
+              number: 80
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: task-queue-service
+            port:
+              number: 80
+  # Uncomment for HTTPS
+  # tls:
+  # - hosts:
+  #   - task-queue.local
+  #   secretName: task-queue-tls
+
+---
+# NetworkPolicy for security (optional)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: task-queue-netpol
+  namespace: task-queue-system
+  labels:
+    app.kubernetes.io/name: task-queue
+    app.kubernetes.io/component: security
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: task-queue
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: task-queue
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to: [] # Allow all outbound for webhooks, external APIs
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+    - protocol: UDP
+      port: 53 # DNS
